@@ -4,19 +4,11 @@ declare(strict_types=1);
 
 namespace spaceonfire\MonologBridge\Handler;
 
-use Laminas\Hydrator\HydratorInterface;
 use Monolog\Handler\HandlerInterface;
 use Monolog\Handler\StreamHandler;
-use Monolog\Logger;
-use spaceonfire\LaminasHydratorBridge\NamingStrategy\AliasNamingStrategy;
-use spaceonfire\LaminasHydratorBridge\StdClassHydrator;
-use spaceonfire\LaminasHydratorBridge\Strategy\BooleanStrategy;
 
-final class StreamHandlerFactory extends AbstractHandlerFactory
+final class StreamHandlerFactory implements HandlerFactoryInterface
 {
-    /**
-     * @inheritDoc
-     */
     public function supportedTypes(): array
     {
         return [
@@ -25,41 +17,22 @@ final class StreamHandlerFactory extends AbstractHandlerFactory
         ];
     }
 
-    /**
-     * @inheritDoc
-     */
-    public function make(array $parameters, CompositeHandlerFactory $factory): HandlerInterface
+    public function make(array $settings): HandlerInterface
     {
-        $parametersHydrated = $this->hydrateParameters($parameters);
+        $config = new StreamHandlerSettings($settings);
 
-        return new StreamHandler(
-            $parametersHydrated->stream,
-            $parametersHydrated->level ?? Logger::DEBUG,
-            $parametersHydrated->bubble ?? true,
-            $parametersHydrated->filePermission ?? null,
-            $parametersHydrated->useLocking ?? false
-        );
-    }
-
-    protected function getParametersHydrator(): ?HydratorInterface
-    {
-        $hydrator = new StdClassHydrator();
-
-        $hydrator->setNamingStrategy(new AliasNamingStrategy([
-            'stream' => ['path'],
-            'filePermission' => ['file_permission', 'file-permission'],
-            'useLocking' => ['use_locking', 'use-locking'],
-        ]));
-
-        $boolHydratorStrategy = new BooleanStrategy(
-            ['y', 'Y', 1],
-            ['n', 'N', 0],
-            false
+        $handler = new StreamHandler(
+            $config->stream,
+            $config->level,
+            $config->bubble,
+            $config->filePermission,
+            $config->useLocking,
         );
 
-        $hydrator->addStrategy('bubble', $boolHydratorStrategy);
-        $hydrator->addStrategy('useLocking', $boolHydratorStrategy);
+        if (null !== $formatter = $config->getFormatter()) {
+            $handler->setFormatter($formatter);
+        }
 
-        return $hydrator;
+        return $handler;
     }
 }

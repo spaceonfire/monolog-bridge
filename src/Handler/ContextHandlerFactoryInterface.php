@@ -6,18 +6,13 @@ namespace spaceonfire\MonologBridge\Handler;
 
 use Monolog\Handler\HandlerInterface;
 
-interface HandlerFactoryInterface
+interface ContextHandlerFactoryInterface
 {
     /**
-     * Returns list of supported handler types and/or its aliases.
-     * @return string[]
-     */
-    public function supportedTypes(): array;
-
-    /**
      * Creates monolog handler with given parameters.
+     * @param string $context
      * @param array<string,mixed> $settings
      * @return HandlerInterface
      */
-    public function make(array $settings): HandlerInterface;
+    public function make(string $context, array $settings): HandlerInterface;
 }

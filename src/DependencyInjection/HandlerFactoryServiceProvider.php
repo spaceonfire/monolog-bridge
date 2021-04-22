@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace spaceonfire\MonologBridge\DependencyInjection;
 
+use spaceonfire\Container\Factory\DefinitionTag;
 use spaceonfire\Container\ServiceProvider\AbstractServiceProvider;
 use spaceonfire\MonologBridge\Handler;
 use Symfony\Bridge\Monolog\Handler\MailerHandler;
@@ -11,70 +12,68 @@ use Symfony\Component\Console\Logger\ConsoleLogger;
 
 final class HandlerFactoryServiceProvider extends AbstractServiceProvider
 {
-    public const DEFINITION_TAG = 'monolog.handler.factory';
+    private bool $shareDefinitions;
 
-    /**
-     * @var bool
-     */
-    private $shareDefinitions;
-
-    /**
-     * HandlerFactoryServiceProvider constructor.
-     * @param bool $shareDefinitions
-     */
     public function __construct(bool $shareDefinitions = false)
     {
         $this->shareDefinitions = $shareDefinitions;
     }
 
-    /**
-     * @inheritDoc
-     */
-    public function provides(): array
+    public function provides(): iterable
     {
-        $provideList = $this->factories();
-
-        $provideList[] = Handler\CompositeHandlerFactory::class;
-        $provideList[] = self::DEFINITION_TAG;
-
-        return $provideList;
+        yield from $this->factories();
+        yield Handler\ContextHandlerFactoryInterface::class;
+        yield Handler\HandlerFactoryAggregate::class;
+        yield DefinitionTag::MONOLOG_HANDLER_FACTORY;
     }
 
-    /**
-     * @inheritDoc
-     */
     public function register(): void
     {
-        $this->getContainer()->add(
-            Handler\CompositeHandlerFactory::class,
+        $this->getContainer()->define(
+            Handler\ContextHandlerFactoryInterface::class,
+            Handler\HandlerFactoryAggregate::class,
+        );
+        $this->getContainer()->define(
+            Handler\HandlerFactoryAggregate::class,
             [$this, 'makeCompositeHandlerFactory'],
-            $this->shareDefinitions
+            $this->shareDefinitions,
         );
 
         foreach ($this->factories() as $handlerFactory) {
             $this->getContainer()
-                ->add($handlerFactory, null, $this->shareDefinitions)
-                ->addTag(self::DEFINITION_TAG);
+                ->define($handlerFactory, null, $this->shareDefinitions)
+                ->addTag(DefinitionTag::MONOLOG_HANDLER_FACTORY);
         }
     }
 
-    public function makeCompositeHandlerFactory(): Handler\CompositeHandlerFactory
+    public function makeCompositeHandlerFactory(): Handler\HandlerFactoryAggregate
     {
-        return new Handler\CompositeHandlerFactory(
-            $this->getContainer()->getTagged(self::DEFINITION_TAG)
-        );
+        $aggregate = new Handler\HandlerFactoryAggregate();
+
+        foreach ($this->getContainer()->getTagged(DefinitionTag::MONOLOG_HANDLER_FACTORY) as $factory) {
+            if (!$factory instanceof Handler\HandlerFactoryInterface) {
+                continue;
+            }
+
+            $aggregate->add($factory);
+        }
+
+        return $aggregate;
     }
 
     /**
-     * @return array<string|class-string>
+     * @return \Generator<class-string<Handler\HandlerFactoryInterface>>
      */
-    private function factories(): array
+    private function factories(): \Generator
     {
-        return array_keys(array_filter([
-            Handler\StreamHandlerFactory::class => true,
-            Handler\FingersCrossedHandlerFactory::class => true,
-            Handler\ConsoleHandlerFactory::class => class_exists(ConsoleLogger::class),
-            Handler\MailerHandlerFactory::class => class_exists(MailerHandler::class),
-        ]));
+        yield Handler\StreamHandlerFactory::class;
+        yield Handler\FingersCrossedHandlerFactory::class;
+
+        if (\class_exists(ConsoleLogger::class)) {
+            yield Handler\ConsoleHandlerFactory::class;
+        }
+        if (\class_exists(MailerHandler::class)) {
+            yield Handler\MailerHandlerFactory::class;
+        }
     }
 }

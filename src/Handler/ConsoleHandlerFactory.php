@@ -4,64 +4,48 @@ declare(strict_types=1);
 
 namespace spaceonfire\MonologBridge\Handler;
 
-use Laminas\Hydrator\HydratorInterface;
-use Psr\Log\LoggerInterface;
-use spaceonfire\LaminasHydratorBridge\NamingStrategy\AliasNamingStrategy;
-use spaceonfire\LaminasHydratorBridge\StdClassHydrator;
+use Monolog\Handler\HandlerInterface;
+use Monolog\Handler\PsrHandler;
 use Symfony\Component\Console\Logger\ConsoleLogger;
 use Symfony\Component\Console\Output\OutputInterface;
 
-final class ConsoleHandlerFactory extends AbstractPsrHandlerFactory
+final class ConsoleHandlerFactory implements HandlerFactoryInterface
 {
-    /**
-     * @var OutputInterface|null
-     */
-    private $output;
+    private ?OutputInterface $output;
 
-    /**
-     * ConsoleHandlerFactory constructor.
-     * @param OutputInterface|null $output
-     */
     public function __construct(?OutputInterface $output = null)
     {
         $this->output = $output;
     }
 
-    /**
-     * @inheritDoc
-     */
     public function supportedTypes(): array
     {
-        if ('cli' !== PHP_SAPI || !class_exists(ConsoleLogger::class)) {
+        if ('cli' !== \PHP_SAPI || !\class_exists(ConsoleLogger::class)) {
             return [];
         }
 
         return ['console'];
     }
 
-    /**
-     * @inheritDoc
-     */
-    protected function makeLogger(array $parameters, CompositeHandlerFactory $factory): LoggerInterface
+    public function make(array $settings): HandlerInterface
     {
-        $parametersHydrated = $this->hydrateParameters($parameters);
+        $config = new ConsoleHandlerSettings($settings);
 
-        return new ConsoleLogger(
-            $parametersHydrated->output ?? $this->output,
-            $parametersHydrated->verbosityLevelMap ?? [],
-            $parametersHydrated->formatLevelMap ?? []
+        $output = $config->output ?? $this->output;
+        \assert(null !== $output);
+
+        $logger = new ConsoleLogger(
+            $output,
+            $config->verbosityLevelMap,
+            $config->formatLevelMap,
         );
-    }
 
-    protected function getParametersHydrator(): ?HydratorInterface
-    {
-        $hydrator = new StdClassHydrator();
+        $handler = new PsrHandler($logger, $config->level, $config->bubble);
 
-        $hydrator->setNamingStrategy(new AliasNamingStrategy([
-            'verbosityLevelMap' => ['verbosity_level_map', 'verbosity-level-map'],
-            'formatLevelMap' => ['format_level_map', 'format-level-map'],
-        ]));
+        if (null !== $formatter = $config->getFormatter()) {
+            $handler->setFormatter($formatter);
+        }
 
-        return $hydrator;
+        return $handler;
     }
 }
